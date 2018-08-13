@@ -1,0 +1,263 @@
+---
+title: "Q3_Answer"
+author: "dan"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Big Data Analytics Assignment (Text Analytics, Natural Language Processing & Sentiment Analytics)
+
+## Question 3: Construction of Representation Vectors for Documents using word2vec Approach.
+
+data source: http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz
+
+_file downloaded and unzipped in seperate locatoin with symbolic link in folder named aclImdb_
+
+```{r q3 ini, message=FALSE}
+# Question 3 ##########
+library(tm)
+library(wordVectors)
+library(e1071)
+library(readr)
+```
+```{r q3a, message=FALSE}
+# Q3a ##########
+nVec <- 100
+posText <- readLines("rt-polarity.pos")
+negText <- readLines("rt-polarity.neg")
+allText <- c(posText, negText)
+corp <- VCorpus(VectorSource(allText))
+UnigramTokenizer <- function(x) unlist(lapply(ngrams(words(x), 1), paste0, collapse = " "), use.names = FALSE)
+# Remove Punctuation
+corp <- tm_map(corp, removePunctuation)
+# Remove Extra Spaces
+corp <- tm_map(corp, stripWhitespace)
+# Compute the tf-idf for each word
+tdm <- TermDocumentMatrix(corp, control=list(weighting=weightTfIdf, tokenize=UnigramTokenizer))
+tfidf <- as.matrix(tdm)
+# combine all reviews into single file
+doc <- c()
+for (i in 1:length(corp)) {
+    doc <- c(doc, content(corp[[i]]))
+}
+cat(UnigramTokenizer(doc), file="reviews.txt")
+if (!file.exists("reviews_vectors.bin")) {
+    model <- train_word2vec("reviews.txt",
+                            "reviews_vectors.bin",
+                            vectors=nVec,
+                            threads=4,
+                            window=10,
+                            iter=10,
+                            negative_samples=0)
+} else model <- read.vectors("reviews_vectors.bin")
+write.txt.word2vec <- function(model,filename) {
+    filehandle <- file(filename,"wb")
+    dim <- dim(model)
+    writeChar(as.character(dim[1]),filehandle,eos=NULL)
+    writeChar(" ",filehandle,eos=NULL)
+    writeChar(as.character(dim[2]),filehandle,eos=NULL)
+    writeChar("\n",filehandle,eos=NULL)
+    names <- rownames(model)
+    # I just store the rownames outside the loop, here.
+    i <- 1
+    names <- rownames(model)
+    silent <- apply(model,1,function(row) {
+        # EOS must be null for this to work properly, because, ridiculously,
+        # 'eos=NULL' is the command that tells R *not* to insert a null string
+        # after a character.
+        writeChar(paste0(names[i]," "),filehandle,eos=NULL)
+        text <- paste(as.character(row),collapse=" ")
+        writeChar(paste(text,"\n"),filehandle,eos=NULL)
+        i <<- i+1
+    })
+    close(filehandle)
+}
+bin_model <- wordVectors::read.binary.vectors("reviews_vectors.bin")
+write.txt.word2vec(bin_model, "reviews_model.txt")
+vector_set <- read.table("reviews_model.txt", skip=1, stringsAsFactor=FALSE)
+rownames(vector_set) <- vector_set$V1
+vector_set <- vector_set[,-1]
+names(vector_set) <- paste0("V",1:nVec)
+
+sen <- NULL
+class <- NULL
+for (j in 1:length(doc)) {
+    x <- UnigramTokenizer(doc[j])
+    vec_rep <- vector_set[x,]
+    if (! all(is.na(vec_rep))){
+        sen <- rbind(sen, c(sapply(seq(ncol(vec_rep)), function(i) {
+            min(vec_rep[,i], na.rm=TRUE)}), 
+            sapply(seq(ncol(vec_rep)), function(i) {
+                max(vec_rep[,i], na.rm=TRUE)})))
+        
+        if (j <= length(posText)) {
+            class <- c(class,1)
+        } else {
+            class <- c(class,0)
+        }
+    }
+}
+class <- factor(class)
+```
+```{r q3a-output}
+# Gaussian Kernel
+svm.model <- svm(x=sen, y=class)
+pred <- predict(svm.model, sen)
+table(class, pred)
+mean(class==pred)
+# Polynomial Kernel
+svm.model <- svm(x=sen, y=class, kernel="polynomial")
+pred <- predict(svm.model, sen)
+table(class, pred)
+mean(class==pred)
+```
+
+```{r q3b, message=FALSE}
+# Q3b ##########
+q3b <- function(n){
+    nVec <- n
+    bin.name <- paste0("reviews_vectors",n,".bin")
+    txt.name <- paste0("reviews_model",n,".txt")
+    
+    if (!file.exists(bin.name)) {
+        model <- train_word2vec("reviews.txt",
+                                bin.name,
+                                vectors=nVec,
+                                threads=4,
+                                window=10,
+                                iter=10,
+                                negative_samples=0)
+    } else model <- read.vectors(bin.name)
+    bin_model <- wordVectors::read.binary.vectors(bin.name)
+    write.txt.word2vec(bin_model, txt.name)
+    vector_set <- read.table(txt.name, skip=1, stringsAsFactor=FALSE)
+    rownames(vector_set) <- vector_set$V1
+    vector_set <- vector_set[,-1]
+    names(vector_set) <- paste0("V",1:nVec)
+    
+    sen <- NULL
+    class <- NULL
+    for (j in 1:length(doc)) {
+        x <- UnigramTokenizer(doc[j])
+        vec_rep <- vector_set[x,]
+        if (! all(is.na(vec_rep))){
+            sen <- rbind(sen, c(sapply(seq(ncol(vec_rep)), function(i) {
+                min(vec_rep[,i], na.rm=TRUE)}), 
+                sapply(seq(ncol(vec_rep)), function(i) {
+                    max(vec_rep[,i], na.rm=TRUE)})))
+        
+            if (j <= length(posText)) {
+                class <- c(class,1)
+            } else {
+                class <- c(class,0)
+            }
+        }
+    }
+    class <- factor(class)
+    
+    svm.model <- svm(x=sen, y=class)
+    pred <- predict(svm.model, sen)
+    return(mean(class==pred))
+}
+
+q3b.result <- data.frame(nVec=c(50,100,200))
+accuracy.list <- list()
+for (i in 1:length(q3b.result$nVec)){
+    accuracy.list[[i]] <- q3b(q3b.result$nVec[i])
+}
+q3b.result$accuracy <- unlist(accuracy.list)
+```
+```{r q3b-output}
+q3b.result
+```
+
+```{r q3c, message=FALSE}
+# Q3c ##########
+nVec <- 200
+posText <- readLines("rt-polarity.pos")
+negText <- readLines("rt-polarity.neg")
+allText <- c(posText, negText)
+corp <- VCorpus(VectorSource(allText))
+UnigramTokenizer <- function(x) unlist(lapply(ngrams(words(x), 1), paste0, collapse = " "), use.names = FALSE)
+# Remove Punctuation
+corp <- tm_map(corp, removePunctuation)
+# Remove Extra Spaces
+corp <- tm_map(corp, stripWhitespace)
+# Compute the tf-idf for each word
+tdm <- TermDocumentMatrix(corp, control=list(weighting=weightTfIdf, tokenize=UnigramTokenizer))
+tfidf <- as.matrix(tdm)
+# combine all reviews into single file
+doc <- c()
+for (i in 1:length(corp)) {
+    doc <- c(doc, content(corp[[i]]))
+}
+cat(UnigramTokenizer(doc), file="reviews.txt")
+write.txt.word2vec <- function(model,filename) {
+    filehandle <- file(filename,"wb")
+    dim <- dim(model)
+    writeChar(as.character(dim[1]),filehandle,eos=NULL)
+    writeChar(" ",filehandle,eos=NULL)
+    writeChar(as.character(dim[2]),filehandle,eos=NULL)
+    writeChar("\n",filehandle,eos=NULL)
+    names <- rownames(model)
+    # I just store the rownames outside the loop, here.
+    i <- 1
+    names <- rownames(model)
+    silent <- apply(model,1,function(row) {
+        # EOS must be null for this to work properly, because, ridiculously,
+        # 'eos=NULL' is the command that tells R *not* to insert a null string
+        # after a character.
+        writeChar(paste0(names[i]," "),filehandle,eos=NULL)
+        text <- paste(as.character(row),collapse=" ")
+        writeChar(paste(text,"\n"),filehandle,eos=NULL)
+        i <<- i+1
+    })
+    close(filehandle)
+}
+
+bin.name <- paste0("text8.bin")
+txt.name <- paste0("reviews_model.txt")
+
+model <- read.vectors(bin.name)
+bin_model <- wordVectors::read.binary.vectors(bin.name)
+write.txt.word2vec(bin_model, txt.name)
+vector_set <- read.table(txt.name, skip=1, stringsAsFactor=FALSE)
+rownames(vector_set) <- vector_set$V1
+vector_set <- vector_set[,-1]
+names(vector_set) <- paste0("V",1:nVec)
+
+sen <- NULL
+class <- NULL
+for (j in 1:length(doc)) {
+    x <- UnigramTokenizer(doc[j])
+    vec_rep <- vector_set[x,]
+    if (! all(is.na(vec_rep))){
+        sen <- rbind(sen, c(sapply(seq(ncol(vec_rep)), function(i) {
+            min(vec_rep[,i], na.rm=TRUE)}), 
+            sapply(seq(ncol(vec_rep)), function(i) {
+                max(vec_rep[,i], na.rm=TRUE)})))
+        
+        if (j <= length(posText)) {
+            class <- c(class,1)
+        } else {
+            class <- c(class,0)
+        }
+    }
+}
+class <- factor(class)
+```
+```{r q3c-output}
+# Gaussian Kernel
+svm.model <- svm(x=sen, y=class)
+pred <- predict(svm.model, sen)
+table(class, pred)
+mean(class==pred)
+# Polynomial Kernel
+svm.model <- svm(x=sen, y=class, kernel="polynomial")
+pred <- predict(svm.model, sen)
+table(class, pred)
+mean(class==pred)
+```
