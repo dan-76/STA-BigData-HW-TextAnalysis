@@ -12,10 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Question 3: Construction of Representation Vectors for Documents using word2vec Approach.
 
-data source: http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz
-
-_file downloaded and unzipped in seperate locatoin with symbolic link in folder named aclImdb_
-
 ```{r q3 ini, message=FALSE}
 # Question 3 ##########
 library(tm)
@@ -23,7 +19,7 @@ library(wordVectors)
 library(e1071)
 library(readr)
 ```
-```{r q3a, message=FALSE}
+```{r q3a, results="hide"}
 # Q3a ##########
 nVec <- 100
 posText <- readLines("rt-polarity.pos")
@@ -115,7 +111,7 @@ table(class, pred)
 mean(class==pred)
 ```
 
-```{r q3b, message=FALSE}
+```{r q3b, results="hide"}
 # Q3b ##########
 q3b <- function(n){
     nVec <- n
@@ -174,49 +170,9 @@ q3b.result$accuracy <- unlist(accuracy.list)
 q3b.result
 ```
 
-```{r q3c, message=FALSE}
+```{r q3c, results="hide"}
 # Q3c ##########
 nVec <- 200
-posText <- readLines("rt-polarity.pos")
-negText <- readLines("rt-polarity.neg")
-allText <- c(posText, negText)
-corp <- VCorpus(VectorSource(allText))
-UnigramTokenizer <- function(x) unlist(lapply(ngrams(words(x), 1), paste0, collapse = " "), use.names = FALSE)
-# Remove Punctuation
-corp <- tm_map(corp, removePunctuation)
-# Remove Extra Spaces
-corp <- tm_map(corp, stripWhitespace)
-# Compute the tf-idf for each word
-tdm <- TermDocumentMatrix(corp, control=list(weighting=weightTfIdf, tokenize=UnigramTokenizer))
-tfidf <- as.matrix(tdm)
-# combine all reviews into single file
-doc <- c()
-for (i in 1:length(corp)) {
-    doc <- c(doc, content(corp[[i]]))
-}
-cat(UnigramTokenizer(doc), file="reviews.txt")
-write.txt.word2vec <- function(model,filename) {
-    filehandle <- file(filename,"wb")
-    dim <- dim(model)
-    writeChar(as.character(dim[1]),filehandle,eos=NULL)
-    writeChar(" ",filehandle,eos=NULL)
-    writeChar(as.character(dim[2]),filehandle,eos=NULL)
-    writeChar("\n",filehandle,eos=NULL)
-    names <- rownames(model)
-    # I just store the rownames outside the loop, here.
-    i <- 1
-    names <- rownames(model)
-    silent <- apply(model,1,function(row) {
-        # EOS must be null for this to work properly, because, ridiculously,
-        # 'eos=NULL' is the command that tells R *not* to insert a null string
-        # after a character.
-        writeChar(paste0(names[i]," "),filehandle,eos=NULL)
-        text <- paste(as.character(row),collapse=" ")
-        writeChar(paste(text,"\n"),filehandle,eos=NULL)
-        i <<- i+1
-    })
-    close(filehandle)
-}
 
 bin.name <- paste0("text8.bin")
 txt.name <- paste0("reviews_model.txt")
