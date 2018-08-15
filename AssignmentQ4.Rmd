@@ -38,7 +38,7 @@ reviews <- lDataFrames[[1]]
 dbDisconnect(con)
 rm(list=c("con","lDataFrames","i","tables"))
 ```
-```{r q4}
+```{r q4, results="hide"}
 # Q4a ##########
 nDim <- 100
 x <- as.list(reviews$Text)
@@ -115,7 +115,8 @@ if (!file.exists("q4c_svm_model.rda")) {
     svm.model <- svm(x=doc2_sum_smaller, y=class_smaller)
     save(svm.model, file = "q4c_svm_model.rda")
 } else load("q4c_svm_model.rda")
-
+```
+```{r q4-output}
 pred <- predict(svm.model, doc2_sum_smaller)
 table(class_smaller, pred)
 mean(class_smaller==pred)
