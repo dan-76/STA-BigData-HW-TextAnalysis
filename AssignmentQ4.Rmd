@@ -1,0 +1,122 @@
+---
+title: "Q4_Answer"
+author: "dan"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Big Data Analytics Assignment (Text Analytics, Natural Language Processing & Sentiment Analytics)
+
+## Question 4: Construction of Representation Vectors for Documents using doc2vec Approach.
+
+Link to Download Amazon Fine Food Reviews Dataset: https://mega.nz/#!xxBWyBxA!f2zGyF5nGaRJ64uhIBmRHXcH7f7wR5O5fpWofXTLULM
+
+
+```{r q4 ini, message=FALSE}
+# Question 4 ##########
+library(textTinyR)
+library(fastTextR)
+library(RSQLite)
+library(e1071)
+# connect to the sqlite file
+con <- dbConnect(drv=RSQLite::SQLite(), dbname="./database.sqlite")
+# get a list of all tables
+tables <- dbListTables(con)
+## exclude sqlite_sequence (contains table information)
+tables <- tables[tables != "sqlite_sequence"]
+
+lDataFrames <- vector("list", length=length(tables))
+
+## create a data.frame for each table
+for (i in seq(along=tables)) {
+    lDataFrames[[i]] <- dbGetQuery(conn=con, statement=paste("SELECT * FROM '", tables[[i]], "'", sep=""))
+}
+reviews <- lDataFrames[[1]]
+dbDisconnect(con)
+rm(list=c("con","lDataFrames","i","tables"))
+```
+```{r q4}
+# Q4a ##########
+nDim <- 100
+x <- as.list(reviews$Text)
+food <- sapply(x, paste0, collapse=" ")
+
+char_vec <- textTinyR::tokenize_transform_vec_docs(object=food, as_token=TRUE,
+                                                   to_lower=TRUE, 
+                                                   remove_punctuation_vector=FALSE,
+                                                   remove_numbers=FALSE, 
+                                                   trim_token=TRUE,
+                                                   split_string=TRUE,
+                                                   split_separator=" \r\n\t.,;:()?!//", 
+                                                   remove_stopwords=TRUE,
+                                                   language="english", 
+                                                   min_num_char=3, 
+                                                   max_num_char=100,
+                                                   stemmer="porter2_stemmer", 
+                                                   threads=4,
+                                                   verbose=TRUE)
+tmp_dir_txt <- paste0(tempdir(),"\\")
+save_dat <- textTinyR::tokenize_transform_vec_docs(object=food, as_token=TRUE, 
+                                                   to_lower=TRUE, 
+                                                   remove_punctuation_vector=FALSE,
+                                                   remove_numbers=FALSE, trim_token=TRUE, 
+                                                   split_string=TRUE, 
+                                                   split_separator=" \r\n\t.,;:()?!//",
+                                                   remove_stopwords=TRUE, language="english", 
+                                                   min_num_char=3, max_num_char=100, 
+                                                   stemmer="porter2_stemmer", 
+                                                   path_2folder=tmp_dir_txt, 
+                                                   threads=4, verbose=TRUE)
+tmp_file_txt <- paste0(tmp_dir_txt,"output_token_single_file.txt")
+tmp_file_model <- tempfile()
+
+
+vecs <- fasttext(input=tmp_file_txt, method="skipgram",
+                 control=ft.control(learning_rate = 0.075,
+                                    learn_update = 100L,
+                                    word_vec_size = 100L,
+                                    window_size = 5L, 
+                                    epoch = 5L, min_count = 1L, 
+                                    neg = 5L, 
+                                    max_len_ngram = 2L, 
+                                    loss = "ns", 
+                                    nbuckets = 2000000L, 
+                                    min_ngram = 0L,
+                                    max_ngram = 0L, 
+                                    nthreads = 6L, 
+                                    threshold = 0.0001, 
+                                    verbose = 2))
+save.fasttext(model=vecs, file=tmp_file_model)
+tmp_file_vec <- paste0(tmp_file_model,".vec")
+x <- readLines(tmp_file_vec)
+x1 <- x[-1]
+writeLines(x1,tmp_file_vec)
+rm(list=c("x","x1"))
+init <- textTinyR::Doc2Vec$new(token_list = char_vec$token, 
+                               word_vector_FILE = tmp_file_vec,
+                               print_every_rows = 5000, 
+                               verbose = TRUE, 
+                               copy_data = FALSE)
+doc2_sum <- init$doc2vec_methods(method = "sum_sqrt", threads = 6)
+
+# Q4b ##########
+class <- ifelse(reviews$Score>=3,1,0)
+
+# Q4c ##########
+class <- factor(class)
+
+doc2_sum_smaller <- doc2_sum[1:284227,]
+class_smaller <- class[1:284227]
+
+if (!file.exists("q4c_svm_model.rda")) {
+    svm.model <- svm(x=doc2_sum_smaller, y=class_smaller)
+    save(svm.model, file = "q4c_svm_model.rda")
+} else load("q4c_svm_model.rda")
+
+pred <- predict(svm.model, doc2_sum_smaller)
+table(class_smaller, pred)
+mean(class_smaller==pred)
+```
